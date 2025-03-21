@@ -32,7 +32,7 @@ Usage: dlsf-cli --target <value> --username <value> --password <value> [--interv
   dlsf-cli --target 114514:100001,1919810:100002 --user 114514 --password 123456 --interval 5 --nc
 `
 
-const version = "1.0.0"
+const version = "1.0.2"
 
 const args = minimist(process.argv.slice(2), {
   alias: {
