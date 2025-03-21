@@ -1,0 +1,906 @@
+#!/usr/bin/env node
+
+import minimist from "minimist"
+import blessed from "blessed"
+import { api, cookie } from "./api"
+
+const help = `
+██████╗ ██╗     ███████╗    ███████╗██╗   ██╗ ██████╗██╗  ██╗███████╗██████╗ 
+██╔══██╗██║     ██╔════╝    ██╔════╝██║   ██║██╔════╝██║ ██╔╝██╔════╝██╔══██╗
+██║  ██║██║     ███████╗    █████╗  ██║   ██║██║     █████╔╝ █████╗  ██████╔╝
+██║  ██║██║     ╚════██║    ██╔══╝  ██║   ██║██║     ██╔═██╗ ██╔══╝  ██╔══██╗
+██████╔╝███████╗███████║    ██║     ╚██████╔╝╚██████╗██║  ██╗███████╗██║  ██║
+╚═════╝ ╚══════╝╚══════╝    ╚═╝      ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝
+DLSF-cli @ PotatoD3v
+
+Usage: dlsf-cli --target <value> --username <value> --password <value> [--interval <value>] [--api <value>] [--hideSensitive] [--noCheck]
+
+参数说明:
+  --target, -t <value>       必选参数，目标课程，格式为：课程编号:选课序号（中间使用英文冒号分隔，支持多项，多个目标课程使用英文逗号分隔）
+  --user, -u <value>         必选参数，用户名（学号）。
+  --password, -p <value>     必选参数，密码。
+  --interval, -i <value>     可选参数，间隔时间，以秒为单位（默认为 3 秒）。
+  --api, -a <value>          可选参数，DLSF API 地址（默认为 http://localhost:3000)。
+  --hideSensitive, --hs      可选参数，隐藏敏感信息（如学号、姓名等）。
+  --noCheck, --nc            可选参数，同 WEB 面板的 “不校验模式”。
+  
+默认值：
+  --interval 3
+  --api "http://localhost:3000/api"
+
+示例:
+  dlsf-cli --target 114514:100001,1919810:100002 --user 114514 --password 123456 --interval 5 --nc
+`
+
+const version = "1.0.0"
+
+const args = minimist(process.argv.slice(2), {
+  alias: {
+    t: "target",
+    u: "username",
+    p: "password",
+    i: "interval",
+    a: "api",
+    hs: "hideSensitive",
+    nc: "noCheck"
+  },
+  default: {
+    interval: 3,
+    api: "http://localhost:3000/api",
+    hideSensitive: false,
+    noCheck: false
+  },
+  string: ["target", "api", "username", "password"],
+  unknown: (arg) => {
+    console.error(`Unknown argument: ${arg}`)
+    console.log(help)
+    process.exit(1)
+  }
+})
+
+const cliParams = {
+  targets: args.target ? args.target.split(" ") : [],
+  username: args.username,
+  password: args.password,
+  interval: args.interval,
+  api: args.api,
+  hideSensitive: args.hideSensitive,
+  noCheck: args.noCheck
+}
+
+if (!cliParams.targets || !cliParams.username || !cliParams.password) {
+  console.error("缺少必要的命令行参数。")
+  console.log(help)
+  process.exit(1)
+}
+
+const screen = blessed.screen({
+  smartCSR: true,
+  title: "DLSF-cli"
+})
+
+screen.fullUnicode = true
+
+const boxOverview = blessed.box({
+  parent: screen,
+  top: 0,
+  left: 0,
+  width: '100%',
+  height: '100%-1'
+})
+
+const overviewWorker = blessed.box({
+  parent: boxOverview,
+  top: 0,
+  left: 0,
+  width: '100%',
+  height: '100%-10',
+  name: 'overviewBox',
+  border: {
+    type: 'line'
+  },
+  style: {
+    border: {
+      fg: 'white'
+    }
+  }
+})
+
+const overviewWorkerTitle = blessed.text({
+  parent: overviewWorker,
+  top: -1,
+  left: 1,
+  width: 8,
+  height: 1,
+  content: ' Worker ',
+  tags: true,
+  style: {
+    fg: 'white',
+    bg: 'black'
+  }
+})
+
+const overviewInfo = blessed.box({
+  parent: boxOverview,
+  top: "100%-10",
+  left: 0,
+  width: '100%',
+  height: 10,
+  name: 'overviewBox',
+  border: {
+    type: 'line'
+  },
+  style: {
+    border: {
+      fg: 'white',
+      bg: 'black'
+    }
+  }
+})
+
+const overviewInfoTitle = blessed.text({
+  parent: overviewInfo,
+  top: -1,
+  left: 1,
+  width: 6,
+  height: 1,
+  content: ' Info ',
+  tags: true,
+  style: {
+    fg: 'white',
+    bg: 'black'
+  }
+})
+
+const overViewInfoText1 = blessed.text({
+  parent: overviewInfo,
+  top: 1,
+  left: 2,
+  width: "100%-4",
+  height: "100%-5",
+  content: "",
+  tags: true,
+  style: {
+    fg: 'white',
+    bg: 'black'
+  }
+})
+
+
+const overViewInfoText2 = blessed.text({
+  parent: overviewInfo,
+  top: "100%-6",
+  left: 2,
+  width: "100%-4",
+  height: 4,
+  content: "",
+  tags: true,
+  style: {
+    fg: 'cyan',
+    bg: 'black'
+  }
+})
+
+interface worker {
+  targetId: string
+  courseCode: string
+  name: string
+  info: string
+  teacher: string
+  response: string
+  status: number
+}
+let workerList: worker[] = []
+
+const targetIdPercentages = 9
+const namePercentage = 20
+const infoPercentage = 15
+const teacherPercentage = 10
+const responsePercentage = 25
+const progressPercentage = 15
+const statusPercentage = 6
+
+const boxOverviewWidth = Number(boxOverview.width) - 2
+
+const targetIdWidth = Math.floor(targetIdPercentages * boxOverviewWidth / 100)
+const nameWidth = Math.floor(namePercentage * boxOverviewWidth / 100)
+const infoWidth = Math.floor(infoPercentage * boxOverviewWidth / 100)
+const teacherWidth = Math.floor(teacherPercentage * boxOverviewWidth / 100)
+const responseWidth = Math.floor(responsePercentage * boxOverviewWidth / 100)
+const progressWidth = Math.floor(progressPercentage * boxOverviewWidth / 100)
+const statusWidth = Math.floor(statusPercentage * boxOverviewWidth / 100)
+
+function buildWorkerTableTitle() {
+  const workerBox = blessed.box({
+    parent: overviewWorker,
+    top: 0,
+    left: 1,
+    width: '100%-6',
+    height: 1,
+    content: ``,
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const targetIdText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: 0,
+    width: nameWidth,
+    height: 1,
+    content: "选课序号",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const nameText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: targetIdWidth,
+    width: nameWidth,
+    height: 1,
+    content: "课程名称",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const infoText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: targetIdWidth + nameWidth,
+    width: infoWidth,
+    height: 1,
+    content: "最大/申请/已录",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const teacherText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: targetIdWidth + nameWidth + infoWidth,
+    width: teacherWidth,
+    height: 1,
+    content: "授课教师",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const responseText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: targetIdWidth + nameWidth + infoWidth + teacherWidth,
+    width: responseWidth,
+    height: 1,
+    content: "响应信息",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const statusText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: targetIdWidth + nameWidth + infoWidth + teacherWidth + responseWidth,
+    width: statusWidth,
+    height: 1,
+    content: "状态",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+  const ProgressText = blessed.text({
+    parent: workerBox,
+    top: 0,
+    left: statusWidth + targetIdWidth + nameWidth + infoWidth + teacherWidth + responseWidth + 1,
+    width: progressWidth,
+    height: 1,
+    content: "请求冷却",
+    style: {
+      bg: 'white',
+      fg: 'black'
+    }
+  })
+
+}
+buildWorkerTableTitle()
+
+let activeWorker = -1
+let workers: any = []
+
+function startWorker() {
+
+
+  workerList.forEach((target, workerIndex) => {
+
+    const workerBox = blessed.box({
+      parent: overviewWorker,
+      top: 1 + workerIndex,
+      left: 1,
+      width: '100%-6',
+      height: 1,
+      content: ``,
+      style: {
+        bg: 'black',
+        fg: 'white'
+      }
+    })
+
+    const targetIdText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      left: 0,
+      width: targetIdWidth,
+      tags: true,
+      height: 1,
+      content: `{cyan-fg}${String(target.targetId)}{/cyan-fg}`
+    })
+
+    const nameText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      left: targetIdWidth,
+      width: nameWidth,
+      height: 1,
+      content: target.name
+    })
+
+    const infoText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      left: targetIdWidth + nameWidth,
+      width: infoWidth,
+      height: 1,
+      content: target.info,
+      tags: true
+    })
+
+    const teacherText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      left: targetIdWidth + nameWidth + infoWidth,
+      width: teacherWidth,
+      height: 1,
+      content: target.teacher
+    })
+
+    const responseText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      left: targetIdWidth + nameWidth + infoWidth + teacherWidth,
+      width: responseWidth,
+      height: 1,
+      content: target.response
+    })
+
+    let statusTextString
+    switch (target.status) {
+      case -1:
+        statusTextString = ' 等待 '
+        break
+      case 0:
+        statusTextString = '{yellow-bg} 处理 {/yellow-bg}'
+        break
+      case 1:
+        statusTextString = '{red-bg} 失败 {/red-bg}'
+        break
+      case 2:
+        statusTextString = '{green-bg} 成功 {/green-bg}'
+        break
+      case 3:
+        statusTextString = '{red-fg} 错误 {/red-fg}'
+        break
+      default:
+        statusTextString = '{red-fg} 未知 {/red-fg}'
+        break
+    }
+    const statusText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      left: targetIdWidth + nameWidth + infoWidth + teacherWidth + responseWidth,
+      width: statusWidth,
+      height: 1,
+      content: statusTextString,
+      tags: true
+    })
+
+    const progressLength = Number(workerBox.width) - statusWidth - targetIdWidth - nameWidth - infoWidth - teacherWidth - responseWidth
+    const content = Array(progressLength).fill('=').join('')
+
+    const progressText = blessed.text({
+      parent: workerBox,
+      top: 0,
+      right: -1,
+      width: progressLength,
+      height: 1,
+      content: content,
+      style: {
+        fg: 'white',
+        bg: 'black'
+      }
+    })
+
+    let cooldownProgress = 1
+
+    setTimeout(() => {
+      let firstTry = true
+      let worker = setInterval(async () => {
+        if (cooldownProgress >= 1) {
+
+          let isFull
+          let countString
+
+          responseText.setContent(`正在发送请求...`)
+          statusText.setContent("{yellow-bg} 处理 {/yellow-bg}")
+          screen.render()
+
+          if (!cliParams.noCheck) {
+            // printDebug(`Checking ${target.courseCode} ${target.targetId}...`)
+            await api("/selectcourse/initACC", { courseCode: target.courseCode })
+              .then((result: any) => {
+                const lessonData = result.aaData.filter((course: { cttId: string }) => course.cttId == target.targetId)[0]
+                if (lessonData.maxCnt > lessonData.enrollCnt) {
+                  isFull = false
+                } else {
+                  isFull = true
+                  responseText.setContent(`选课人数已满，即将重试...`)
+                  statusText.setContent("{red-bg} 失败 {/red-bg}")
+                }
+                countString = `${lessonData.maxCnt}/${lessonData.applyCnt}/${lessonData.enrollCnt}`
+                infoText.setContent(countString)
+              }).catch((error: any) => {
+                logger.errorRaw("Error checking course availability: ", error)
+              })
+          }
+
+          if (cliParams.noCheck) {
+            infoText.setContent("{yellow-fg}[noCheck]{/yellow-fg}")
+          }
+
+          if (firstTry || !isFull) {
+            api("/selectcourse/scSubmit", { cttId: target.targetId }).then((result: any) => {
+              if (result.msg == "F") {
+                responseText.setContent(`出现验证码，请降低请求速度，本线程已停止！`)
+                statusText.setContent("{red-fg} 错误 {/red-fg}")
+                clearInterval(workers.filter((worker: { target: worker }) => worker.target == target)[0].worker)
+                activeWorker--
+                bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} `)
+              } else if (result.msg == "你这门课已经选了,不允许再次选择了！" || result.success == true) {
+                responseText.setContent(`选课成功！`)
+                statusText.setContent("{green-bg} 成功 {/green-bg}")
+                clearInterval(workers.filter((worker: { target: worker }) => worker.target == target)[0].worker)
+                activeWorker--
+                bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} `)
+              } else {
+                responseText.setContent(result.msg[0])
+                statusText.setContent("{red-bg} 失败 {/red-bg}")
+              }
+            })
+          } else {
+            statusText.setContent("{red-bg} 失败 {/red-bg}")
+          }
+
+          firstTry = false
+
+          cooldownProgress = 0
+        }
+        progressText.setContent(Array(Math.floor((1 - cooldownProgress) * progressLength)).fill('=').join('') + Array(Math.ceil(cooldownProgress * progressLength)).fill(' ').join(''))
+        cooldownProgress += (1 / (cliParams.interval * 1000 / 100))
+        screen.render()
+      }, 100)
+      workers.push({ "target": target, "worker": worker })
+      logger.debugRaw("Workers: ", workers)
+
+    }, workerIndex * 100)
+
+  })
+
+  activeWorker = cliParams.targets.length
+
+}
+
+const boxLog = blessed.box({
+  parent: screen,
+  top: 0,
+  left: 0,
+  width: '100%',
+  height: '100%-1',
+  content: 'Log',
+  tags: true
+})
+
+const logOuter = blessed.text({
+  parent: boxLog,
+  top: 0,
+  left: 0,
+  width: '100%',
+  height: '100%',
+  border: {
+    type: 'line'
+  },
+  style: {
+    border: {
+      fg: 'white'
+    }
+  }
+})
+
+const logInner = blessed.log({
+  parent: logOuter,
+  top: 0,
+  left: 1,
+  tags: true,
+  width: '100%-4',
+  height: '100%-2'
+})
+
+const logTitle = blessed.text({
+  parent: logOuter,
+  top: -1,
+  left: 1,
+  width: 5,
+  height: 1,
+  content: ' Log ',
+  tags: true,
+  style: {
+    fg: 'white',
+    bg: 'black'
+  }
+})
+
+const boxHelp = blessed.box({
+  parent: screen,
+  top: 0,
+  left: 0,
+  width: '100%',
+  height: '100%-1',
+  content: '',
+  tags: true,
+  border: {
+    type: 'line'
+  },
+  style: {
+    fg: 'white',
+    bg: 'black',
+    border: {
+      fg: 'white'
+    },
+    hover: {
+      bg: 'green'
+    }
+  }
+})
+
+const helpTitle = blessed.text({
+  parent: boxHelp,
+  top: -1,
+  left: 1,
+  width: 6,
+  height: 1,
+  content: ' Help ',
+})
+
+const helpHelp = blessed.text({
+  parent: boxHelp,
+  top: 0,
+  left: 2,
+  width: '100%-6',
+  height: '100%-2',
+  content: help,
+  tags: true,
+  style: {
+    fg: 'white',
+    bg: 'black'
+  }
+})
+
+switchToTab(1)
+
+const menuBar = blessed.listbar({
+  parent: screen,
+  bottom: 0,
+  width: "100%",
+  height: 1,
+  style: {
+    fg: "blue",
+    bg: "white",
+    label: "white",
+    selected: {
+      bg: "cyan",
+      fg: "black"
+    },
+    item: {
+      bg: "white",
+      fg: "black"
+    }
+  },
+  autoCommandKeys: false,
+  keys: true,
+  commands: {
+    "Overview": {
+      keys: ["1"],
+      callback: () => { switchToTab(1) }
+    },
+    "Log": {
+      keys: ["2"],
+      callback: () => { switchToTab(2) }
+    },
+    "Help": {
+      keys: ["3"],
+      callback: () => { switchToTab(3) }
+    },
+    "Exit": {
+      keys: ["0"],
+      callback: () => {
+        return process.exit(0)
+      }
+    }
+  } as any,
+  // type definitions bug
+  // shit I hate this
+  items: []
+})
+
+const bottomText = blessed.text({
+  parent: screen,
+  bottom: 0,
+  right: 16,
+  width: 9,
+  height: 1,
+  content: "DLSF-cli",
+  style: {
+    fg: "black",
+    bg: "white"
+  }
+})
+
+const bottomTimer = blessed.text({
+  parent: screen,
+  bottom: 0,
+  right: 0,
+  width: 16,
+  height: 1,
+  content: " 00:00:00 ",
+  style: {
+    fg: "black",
+    bg: "cyan"
+  }
+})
+
+const bottomStatus = blessed.text({
+  parent: screen,
+  bottom: 0,
+  right: 0,
+  width: 6,
+  height: 1,
+  content: " 1/10 ",
+  style: {
+    fg: "black",
+    bg: "red"
+  }
+})
+
+let timer = 0
+
+setInterval(() => {
+  timer += 1
+  bottomTimer.setContent(" " + formatSeconds(timer))
+  screen.render()
+}, 1000)
+
+function formatSeconds(seconds: number) {
+  let hours = Math.floor(seconds / 3600)
+  let minutes = Math.floor((seconds % 3600) / 60)
+  let secs = seconds % 60
+
+  let hh = hours < 10 ? '0' + hours : hours
+  let mm = minutes < 10 ? '0' + minutes : minutes
+  let ss = secs < 10 ? '0' + secs : secs
+
+  return `${hh}:${mm}:${ss}`
+}
+
+// 监听退出事件
+screen.key(["escape", "q", "C-c"], (ch, key) => {
+  screen.destroy()
+  console.clear()
+  console.log("DLSF CLI 已退出。")
+  return process.exit(0)
+})
+
+let currentTab = 1
+screen.key(["right"], (ch, key) => {
+  if (currentTab < 3) {
+    menuBar.select(currentTab + 1 - 1)
+    switchToTab(currentTab + 1)
+    currentTab++
+    screen.render()
+  }
+})
+screen.key(["left"], (ch, key) => {
+  if (currentTab > 1) {
+    menuBar.select(currentTab - 1 - 1)
+    switchToTab(currentTab - 1)
+    currentTab--
+    screen.render()
+  }
+})
+
+
+
+// 渲染屏幕
+screen.render()
+
+boxOverview.focus()
+
+function switchToTab(index: number) {
+  boxOverview.hide()
+  boxLog.hide()
+  boxHelp.hide()
+  switch (index) {
+    case 1:
+      boxOverview.show()
+      boxOverview.focus()
+      break
+    case 2:
+      boxLog.show()
+      boxLog.focus()
+      break
+    case 3:
+      boxHelp.show()
+      boxHelp.focus()
+      break
+    default:
+      boxOverview.show()
+      boxOverview.focus()
+      break
+  }
+}
+const logLevel = 0 // 0: debug, 1: info, 2: warn, 3: error
+export const logger = {
+  debug: (msg: string) => {
+    if (logLevel <= 0) {
+      const str = `{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {blue-fg}DEBUG{/blue-fg} | ${msg}`
+      try {
+        logInner.log(str)
+      } catch (e) {
+        console.error(e)
+      }
+    }
+  },
+  info: (msg: string) => {
+    if (logLevel <= 1) {
+      const str = `{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {green-fg}INFO{/green-fg} | ${msg}`
+      logInner.log(str)
+    }
+  },
+  warn: (msg: string) => {
+    if (logLevel <= 2) {
+      const str = `{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {yellow-fg}WARN{/yellow-fg} | ${msg}`
+      logInner.log(str)
+    }
+  },
+  error: (msg: string) => {
+    if (logLevel <= 3) {
+      const str = `{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {red-fg}ERROR{/red-fg} | ${msg}`
+      logInner.log(str)
+    }
+  },
+  debugRaw: (msg: any, raw: any) => {
+    if (logLevel <= 0) {
+      logInner.log(`{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {blue-fg}DEBUG{/blue-fg} | ${msg}`)
+      logInner.log(raw)
+    }
+  },
+  infoRaw: (msg: any, raw: any) => {
+    if (logLevel <= 1) {
+      logInner.log(`{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {green-fg}INFO{/green-fg} | ${msg}`)
+      logInner.log(raw)
+    }
+  },
+  warnRaw: (msg: any, raw: any) => {
+    if (logLevel <= 2) {
+      logInner.log(`{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {yellow-fg}WARN{/yellow-fg} | ${msg}`)
+      logInner.log(raw)
+    }
+  },
+  errorRaw: (msg: any, raw: any) => {
+    if (logLevel <= 3) {
+      logInner.log(`{cyan-fg}${new Date().toLocaleString()}{/cyan-fg} | {red-fg}ERROR{/red-fg} | ${msg}`)
+      logInner.log(raw)
+    }
+  }
+}
+
+logger.debugRaw("params:", cliParams)
+
+function init() {
+  api("/dlsf/version", {}).then((result: any) => {
+    overViewInfoText2.content = `DLSF CLI 版本：${version}\nDLSF API 地址：${cliParams.api}\nDLSF API 版本：${result.currentVersion.slice(0, 7)}`
+  }).catch(error => {
+    screen.destroy()
+    console.clear()
+    console.error(error)
+    console.error("初始化失败：无法与 DLSF API 建立通信，请检查 API 地址是否正确或 DLSF API 是否已启动。")
+    process.exit(1)
+  })
+
+  api("/dlsf/loginGetToken", { username: cliParams.username, password: cliParams.password }).then((result: any) => {
+    if (result.DLSF_SUCCESS == false) {
+      screen.destroy()
+      console.clear()
+      console.error("初始化失败：登录失败，请检查用户名和密码是否正确。")
+      process.exit(1)
+    } else {
+      cookie.JSESSIONID = result.JSESSIONID
+      cookie.array = result.array
+      logger.debugRaw("CAS 自动登录:", cookie)
+    }
+  }).then(() => {
+    api("/studentui/initstudinfo", {}).then((result: any) => {
+      if (cliParams.hideSensitive) {
+        overViewInfoText1.content = `学号：{red-fg}[0xFFFFFFFF]{/red-fg}\n姓名：{red-fg}[PotatoD3v]{/red-fg}`
+      } else {
+        overViewInfoText1.content = `学号：${result.studBasis.basisNo}\n姓名：${result.studBasis.basisName}`
+      }
+    })
+    const promises = cliParams.targets.map(async (target: string) => {
+      const courseCode = target.split(":")[0]
+      const cttId = target.split(":")[1]
+      try {
+        const result: any = await api("/selectcourse/initACC", { courseCode: courseCode })
+        const lessonData = result.aaData.find((course: any) => course.cttId == cttId)
+        if (!lessonData) {
+          screen.destroy()
+          console.clear()
+          console.error(result)
+          process.exit(1)
+        } else {
+          workerList.push({
+            targetId: cttId,
+            courseCode: courseCode,
+            name: lessonData.crName,
+            info: "",
+            teacher: lessonData.techName,
+            response: "",
+            status: -1
+          })
+        }
+      } catch (error) {
+        screen.destroy()
+        console.clear()
+        console.error(error)
+        console.error("初始化失败：课程信息获取失败。")
+        process.exit(1)
+      }
+    })
+
+    Promise.all(promises).then(() => {
+      startWorker()
+    })
+  })
+
+
+}
+
+init()
+
+function printDebug(object: any) {
+  screen.destroy()
+  console.clear()
+  console.error(object)
+  process.exit(1)
+}
