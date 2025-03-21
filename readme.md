@@ -1,7 +1,7 @@
 # DLSF-cli
 DLSF-cli is a command-line interface for [DLSF](https://github.com/Ltfjx/DLSF).  
 
-> 桜が咲いたら忘れましょ、 
+> 桜が咲いたら忘れましょ、  
 > 咲かない花は忘れましょ。
 
 ## Install
