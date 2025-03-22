@@ -1,5 +1,5 @@
 import axios from "axios"
-import { logger } from "."
+import { logger, printDebug } from "."
 
 let cancelTokens: any = {}
 
@@ -44,18 +44,22 @@ export async function api(target: string, params: any) {
     cancelToken: source.token
   }
 
-  const request = new Promise((resolve, reject) => {
+
+  return new Promise((resolve, reject) => {
     axios(config)
       .then(function (response) {
         logger.info("API OK " + target + "?" + queryString)
         resolve(response.data)
       })
       .catch(function (error) {
-        logger.errorRaw("API ERROR " + target + "?" + queryString, error.cause)
-        reject(error)
+        if (axios.isCancel(error)) {
+          logger.error("API CANCEL " + target + "?" + queryString)
+          reject("API CANCEL")
+        } else {
+          logger.errorRaw("API ERROR " + target + "?" + queryString, error)
+          reject("API ERROR")
+        }
       })
   })
-
-  return request
 
 }

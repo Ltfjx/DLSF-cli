@@ -16,8 +16,8 @@ DLSF-cli @ PotatoD3v
 Usage: dlsf-cli --target <value> --username <value> --password <value> [--interval <value>] [--api <value>] [--hideSensitive] [--noCheck]
 
 参数说明:
-  --target, -t <value>       必选参数，目标课程，格式为：课程编号:选课序号（中间使用英文冒号分隔，支持多项，多个目标课程使用英文逗号分隔）
-  --user, -u <value>         必选参数，用户名（学号）。
+  --target, -t <value>       必选参数，目标课程，格式为：课程编号:选课序号（中间使用英文冒号分隔，支持多项）
+  --username, -u <value>     必选参数，用户名（学号）。
   --password, -p <value>     必选参数，密码。
   --interval, -i <value>     可选参数，间隔时间，以秒为单位（默认为 3 秒）。
   --api, -a <value>          可选参数，DLSF API 地址（默认为 http://localhost:3000)。
@@ -29,10 +29,10 @@ Usage: dlsf-cli --target <value> --username <value> --password <value> [--interv
   --api "http://localhost:3000/api"
 
 示例:
-  dlsf-cli --target 114514:100001,1919810:100002 --user 114514 --password 123456 --interval 5 --nc
+  dlsf-cli -t 114514:100001 -t 1919810:100002 --username 114514 --password 123456 --interval 5 --nc
 `
 
-const version = "1.0.3"
+const version = "1.1.0"
 
 const args = minimist(process.argv.slice(2), {
   alias: {
@@ -59,7 +59,7 @@ const args = minimist(process.argv.slice(2), {
 })
 
 const cliParams = {
-  targets: args.target ? args.target.split(" ") : [],
+  targets: Array.isArray(args.target) ? args.target : [args.target],
   username: args.username,
   password: args.password,
   interval: args.interval,
@@ -74,10 +74,12 @@ if (!cliParams.targets || !cliParams.username || !cliParams.password) {
   process.exit(1)
 }
 
+
 const screen = blessed.screen({
   smartCSR: true,
   title: "DLSF-cli"
 })
+// printDebug(cliParams)
 
 screen.fullUnicode = true
 
@@ -437,61 +439,60 @@ function startWorker() {
 
     setTimeout(() => {
       let firstTry = true
-      let worker = setInterval(async () => {
+      let worker = setInterval(() => {
         if (cooldownProgress >= 1) {
 
-          let isFull
-          let countString
+          work().catch((error) => {
+            logger.errorRaw("Error in worker: ", error)
+          })
 
-          responseText.setContent(`正在发送请求...`)
-          statusText.setContent("{yellow-bg} 处理 {/yellow-bg}")
-          screen.render()
+          async function work() {
+            let isFull = false
+            let countString = ""
 
-          if (!cliParams.noCheck) {
-            // printDebug(`Checking ${target.courseCode} ${target.targetId}...`)
-            await api("/selectcourse/initACC", { courseCode: target.courseCode })
-              .then((result: any) => {
-                const lessonData = result.aaData.filter((course: { cttId: string }) => course.cttId == target.targetId)[0]
-                if (lessonData.maxCnt > lessonData.enrollCnt) {
-                  isFull = false
-                } else {
-                  isFull = true
-                  responseText.setContent(`选课人数已满，即将重试...`)
-                  statusText.setContent("{red-bg} 失败 {/red-bg}")
-                }
-                countString = `${lessonData.maxCnt}/${lessonData.applyCnt}/${lessonData.enrollCnt}`
-                infoText.setContent(countString)
-              }).catch((error: any) => {
-                logger.errorRaw("Error checking course availability: ", error)
-              })
-          }
+            responseText.setContent(`正在发送请求...`)
+            statusText.setContent("{yellow-bg} 处理 {/yellow-bg}")
+            screen.render()
 
-          if (cliParams.noCheck) {
-            infoText.setContent("{yellow-fg}[noCheck]{/yellow-fg}")
-          }
+            if (!cliParams.noCheck) {
+              const result: any = await api("/selectcourse/initACC", { courseCode: target.courseCode })
+              const lessonData = result.aaData.filter((course: { cttId: string }) => course.cttId == target.targetId)[0]
+              if (lessonData.maxCnt > lessonData.enrollCnt) {
+                isFull = false
+              } else {
+                isFull = true
+                responseText.setContent(`选课人数已满，即将重试...`)
+                statusText.setContent("{red-bg} 失败 {/red-bg}")
+              }
+              countString = `${lessonData.maxCnt}/${lessonData.applyCnt}/${lessonData.enrollCnt}`
+              infoText.setContent(countString)
+            } else {
+              infoText.setContent("{yellow-fg}[noCheck]{/yellow-fg}")
+            }
 
-          if (firstTry || !isFull) {
-            api("/selectcourse/scSubmit", { cttId: target.targetId }).then((result: any) => {
+            if (firstTry || !isFull) {
+              const result: any = await api("/selectcourse/scSubmit", { cttId: target.targetId })
               if (result.msg == "F") {
                 responseText.setContent(`出现验证码，请降低请求速度，本线程已停止！`)
                 statusText.setContent("{red-fg} 错误 {/red-fg}")
                 clearInterval(workers.filter((worker: { target: worker }) => worker.target == target)[0].worker)
                 activeWorker--
-                bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} `)
+                bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} Working `)
               } else if (result.msg == "你这门课已经选了,不允许再次选择了！" || result.success == true) {
                 responseText.setContent(`选课成功！`)
                 statusText.setContent("{green-bg} 成功 {/green-bg}")
                 clearInterval(workers.filter((worker: { target: worker }) => worker.target == target)[0].worker)
                 activeWorker--
-                bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} `)
+                bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} Working `)
               } else {
                 responseText.setContent(result.msg[0])
                 statusText.setContent("{red-bg} 失败 {/red-bg}")
               }
-            })
-          } else {
-            statusText.setContent("{red-bg} 失败 {/red-bg}")
+            } else {
+              statusText.setContent("{red-bg} 失败 {/red-bg}")
+            }
           }
+
 
           firstTry = false
 
@@ -502,13 +503,14 @@ function startWorker() {
         screen.render()
       }, 100)
       workers.push({ "target": target, "worker": worker })
-      logger.debugRaw("Workers: ", workers)
+      // logger.debugRaw("Workers: ", workers)
 
     }, workerIndex * 100)
 
   })
 
   activeWorker = cliParams.targets.length
+  bottomStatus.setContent(` ${activeWorker}/${cliParams.targets.length} Working `)
 
 }
 
@@ -657,7 +659,7 @@ const menuBar = blessed.listbar({
 const bottomText = blessed.text({
   parent: screen,
   bottom: 0,
-  right: 16,
+  right: 23,
   width: 9,
   height: 1,
   content: "DLSF-cli",
@@ -670,8 +672,8 @@ const bottomText = blessed.text({
 const bottomTimer = blessed.text({
   parent: screen,
   bottom: 0,
-  right: 0,
-  width: 16,
+  right: 13,
+  width: 10,
   height: 1,
   content: " 00:00:00 ",
   style: {
@@ -684,11 +686,11 @@ const bottomStatus = blessed.text({
   parent: screen,
   bottom: 0,
   right: 0,
-  width: 6,
+  width: 13,
   height: 1,
-  content: " 1/10 ",
+  content: " 0/0 Working ",
   style: {
-    fg: "black",
+    fg: "white",
     bg: "red"
   }
 })
@@ -856,6 +858,12 @@ function init() {
       } else {
         overViewInfoText1.content = `学号：${result.studBasis.basisNo}\n姓名：${result.studBasis.basisName}`
       }
+    }).catch(error => {
+      screen.destroy()
+      console.clear()
+      console.error(error)
+      console.error("初始化失败：学生信息获取失败。")
+      process.exit(1)
     })
     const promises = cliParams.targets.map(async (target: string) => {
       const courseCode = target.split(":")[0]
@@ -898,7 +906,7 @@ function init() {
 
 init()
 
-function printDebug(object: any) {
+export function printDebug(object: any) {
   screen.destroy()
   console.clear()
   console.error(object)

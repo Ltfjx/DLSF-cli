@@ -4,6 +4,8 @@ DLSF-cli is a command-line interface for [DLSF](https://github.com/Ltfjx/DLSF).
 > 桜が咲いたら忘れましょ、  
 > 咲かない花は忘れましょ。
 
+![](/pics/1.webp)
+
 ## Install
 ```
 npm install -g dlsf-cli
