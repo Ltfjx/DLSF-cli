@@ -505,7 +505,7 @@ function startWorker() {
       workers.push({ "target": target, "worker": worker })
       // logger.debugRaw("Workers: ", workers)
 
-    }, workerIndex * 100)
+    }, workerIndex * (cliParams.interval * 1000 / cliParams.targets.length))
 
   })
 
@@ -868,8 +868,9 @@ function init() {
     const promises = cliParams.targets.map(async (target: string) => {
       const courseCode = target.split(":")[0]
       const cttId = target.split(":")[1]
+
       try {
-        const result: any = await api("/selectcourse/initACC", { courseCode: courseCode })
+        const result: any = await api("/selectcourse/initACC", { courseCode: courseCode, _: cttId })
         const lessonData = result.aaData.find((course: any) => course.cttId == cttId)
         if (!lessonData) {
           screen.destroy()
