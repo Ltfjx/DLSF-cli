@@ -18,7 +18,7 @@ Usage: dlsf-cli --target <value> --username <value> --password <value> [--interv
 参数说明:
   --target, -t <value>       必选参数，目标课程，格式为：课程编号:选课序号（中间使用英文冒号分隔，支持多项）
   --jsessionid, -j <value>   必选参数，填写 Cookie: JSESSIONID。
-  --newjwgl, -n <value>     必选参数，填写 Cookie: newjwgl。
+  --newjwgl, -n <value>      必选参数，填写 Cookie: newjwgl。
   --interval, -i <value>     可选参数，间隔时间，以秒为单位（默认为 3 秒）。
   --api, -a <value>          可选参数，DLSF API 地址（默认为 http://localhost:3000)。
   --hideSensitive, --hs      可选参数，隐藏敏感信息（如学号、姓名等）。
@@ -29,10 +29,10 @@ Usage: dlsf-cli --target <value> --username <value> --password <value> [--interv
   --api "http://localhost:3000/api"
 
 示例:
-  dlsf-cli -t 114514:100001 -t 1919810:100002 --username 114514 --password 123456 --interval 5 --nc
+  dlsf-cli -t 114514:100001 -t 1919810:100002 --jsessionid xxxxx --newjwgl xxxxx --interval 5 --nc
 `
 
-const version = "1.1.0"
+const version = "1.2.2"
 
 const args = minimist(process.argv.slice(2), {
   alias: {
