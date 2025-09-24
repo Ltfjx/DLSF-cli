@@ -1,6 +1,6 @@
 {
   "name": "dlsf-cli",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "",
   "homepage": "https://github.com/Ltfjx/DLSF-cli#readme",
   "bugs": {
@@ -9,6 +9,9 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ltfjx/DLSF-cli.git"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.com/"
   },
   "license": "GPL-3.0",
   "author": "Ltfjx",

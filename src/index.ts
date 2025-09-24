@@ -17,8 +17,8 @@ Usage: dlsf-cli --target <value> --username <value> --password <value> [--interv
 
 参数说明:
   --target, -t <value>       必选参数，目标课程，格式为：课程编号:选课序号（中间使用英文冒号分隔，支持多项）
-  --username, -u <value>     必选参数，用户名（学号）。
-  --password, -p <value>     必选参数，密码。
+  --jsessionid, -j <value>   必选参数，填写 Cookie: JSESSIONID。
+  --newjwgl, -n <value>     必选参数，填写 Cookie: newjwgl。
   --interval, -i <value>     可选参数，间隔时间，以秒为单位（默认为 3 秒）。
   --api, -a <value>          可选参数，DLSF API 地址（默认为 http://localhost:3000)。
   --hideSensitive, --hs      可选参数，隐藏敏感信息（如学号、姓名等）。
@@ -37,8 +37,8 @@ const version = "1.1.0"
 const args = minimist(process.argv.slice(2), {
   alias: {
     t: "target",
-    u: "username",
-    p: "password",
+    j: "jsessionid",
+    n: "newjwgl",
     i: "interval",
     a: "api",
     hs: "hideSensitive",
@@ -50,7 +50,7 @@ const args = minimist(process.argv.slice(2), {
     hideSensitive: false,
     noCheck: false
   },
-  string: ["target", "api", "username", "password"],
+  string: ["target", "api", "jsessionid", "newjwgl"],
   unknown: (arg) => {
     console.error(`Unknown argument: ${arg}`)
     console.log(help)
@@ -60,15 +60,15 @@ const args = minimist(process.argv.slice(2), {
 
 const cliParams = {
   targets: Array.isArray(args.target) ? args.target : [args.target],
-  username: args.username,
-  password: args.password,
+  jsessionid: args.jsessionid,
+  newjwgl: args.newjwgl,
   interval: args.interval,
   api: args.api,
   hideSensitive: args.hideSensitive,
   noCheck: args.noCheck
 }
 
-if (!cliParams.targets || !cliParams.username || !cliParams.password) {
+if (!cliParams.targets || !cliParams.jsessionid || !cliParams.newjwgl) {
   console.error("缺少必要的命令行参数。")
   console.log(help)
   process.exit(1)
@@ -840,68 +840,57 @@ function init() {
     process.exit(1)
   })
 
-  api("/dlsf/loginGetToken", { username: cliParams.username, password: cliParams.password }).then((result: any) => {
-    if (result.DLSF_SUCCESS == false) {
-      screen.destroy()
-      console.clear()
-      console.error("初始化失败：登录失败，请检查用户名和密码是否正确。")
-      process.exit(1)
+  cookie.JSESSIONID = cliParams.jsessionid
+  cookie.array = cliParams.newjwgl
+
+  api("/studentui/initstudinfo", {}).then((result: any) => {
+    if (cliParams.hideSensitive) {
+      overViewInfoText1.content = `学号：{red-fg}[HIDDEN]{/red-fg}\n姓名：{red-fg}[HIDDEN]{/red-fg}`
     } else {
-      cookie.JSESSIONID = result.JSESSIONID
-      cookie.array = result.array
-      logger.debugRaw("CAS 自动登录:", cookie)
+      overViewInfoText1.content = `学号：${result.studBasis.basisNo}\n姓名：${result.studBasis.basisName}`
     }
-  }).then(() => {
-    api("/studentui/initstudinfo", {}).then((result: any) => {
-      if (cliParams.hideSensitive) {
-        overViewInfoText1.content = `学号：{red-fg}[0xFFFFFFFF]{/red-fg}\n姓名：{red-fg}[PotatoD3v]{/red-fg}`
+  }).catch(error => {
+    screen.destroy()
+    console.clear()
+    console.error(error)
+    console.error("初始化失败：学生信息获取失败。")
+    process.exit(1)
+  })
+  const promises = cliParams.targets.map(async (target: string) => {
+    const courseCode = target.split(":")[0]
+    const cttId = target.split(":")[1]
+
+    try {
+      const result: any = await api("/selectcourse/initACC", { courseCode: courseCode, _: cttId })
+      const lessonData = result.aaData.find((course: any) => course.cttId == cttId)
+      if (!lessonData) {
+        screen.destroy()
+        console.clear()
+        console.error(result)
+        process.exit(1)
       } else {
-        overViewInfoText1.content = `学号：${result.studBasis.basisNo}\n姓名：${result.studBasis.basisName}`
+        workerList.push({
+          targetId: cttId,
+          courseCode: courseCode,
+          name: lessonData.crName,
+          info: "",
+          teacher: lessonData.techName,
+          response: "",
+          status: -1
+        })
       }
-    }).catch(error => {
+    } catch (error) {
       screen.destroy()
       console.clear()
       console.error(error)
-      console.error("初始化失败：学生信息获取失败。")
+      console.error("初始化失败：课程信息获取失败。")
       process.exit(1)
-    })
-    const promises = cliParams.targets.map(async (target: string) => {
-      const courseCode = target.split(":")[0]
-      const cttId = target.split(":")[1]
-
-      try {
-        const result: any = await api("/selectcourse/initACC", { courseCode: courseCode, _: cttId })
-        const lessonData = result.aaData.find((course: any) => course.cttId == cttId)
-        if (!lessonData) {
-          screen.destroy()
-          console.clear()
-          console.error(result)
-          process.exit(1)
-        } else {
-          workerList.push({
-            targetId: cttId,
-            courseCode: courseCode,
-            name: lessonData.crName,
-            info: "",
-            teacher: lessonData.techName,
-            response: "",
-            status: -1
-          })
-        }
-      } catch (error) {
-        screen.destroy()
-        console.clear()
-        console.error(error)
-        console.error("初始化失败：课程信息获取失败。")
-        process.exit(1)
-      }
-    })
-
-    Promise.all(promises).then(() => {
-      startWorker()
-    })
+    }
   })
 
+  Promise.all(promises).then(() => {
+    startWorker()
+  })
 
 }
 
